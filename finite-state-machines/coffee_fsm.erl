@@ -7,6 +7,8 @@
 -export([americano/0, cappuccino/0, tea/0,      % client functions
          espresso/0, pay/1, cancel/0, cup_removed/0]).
 
+-define(TIMEOUT, 10_000).
+
 start_link() ->
   gen_fsm:start_link({local, ?MODULE}, ?MODULE, [], []).
 
@@ -45,7 +47,7 @@ cup_removed() -> gen_fsm:send_event(?MODULE, cup_removed).
 
 selection({selection, Type, Price}, _LoopData) ->
   hardware:display("Please pay:~w", [Price]),
-  {next_state, payment, {Type, Price, 0}};
+  {next_state, payment, {Type, Price, 0}, ?TIMEOUT};
 selection({pay, Coin}, LoopData) ->
   hardware:return_change(Coin),
   {next_state, selection, LoopData};
@@ -55,7 +57,7 @@ selection(_Other, LoopData) ->
 payment({pay, Coin}, {Type, Price, Paid}) when Coin+Paid < Price ->
   NewPaid = Coin + Paid,
   hardware:display("Please pay:~w", [Price - NewPaid]),
-  {next_state, payment, {Type, Price, NewPaid}};
+  {next_state, payment, {Type, Price, NewPaid}, ?TIMEOUT};
 payment({pay, Coin}, {Type, Price, Paid}) when Coin+Paid >= Price ->
   NewPaid = Coin + Paid,
   hardware:display("Preparing Drink.", []),
@@ -63,6 +65,10 @@ payment({pay, Coin}, {Type, Price, Paid}) when Coin+Paid >= Price ->
   hardware:drop_cup(), hardware:prepare(Type),
   hardware:display("Remove Drink.", []),
   {next_state, remove, null};
+payment(timeout, {Type, _Price, Paid}) ->
+  hardware:display("Too slow. Make Your Selection", []),
+  hardware:return_change(Paid),
+  {next_state, selection, []};
 payment(cancel, {_Type, _Price, Paid}) ->
   hardware:display("Make your selection", []),
   hardware:return_change(Paid),
